@@ -32,6 +32,7 @@ impl SlashProc {
             .filter(|p: &ProcessInfo| !self.hide_kernel || !(p.ppid == 2 || p.tid == 2))
             .collect()
     }
+
     fn read_processes_and_tasks(self) -> Vec<ProcessInfo> {
         if std::fs::read_dir("/proc/self/task").is_err() {
             return vec![];
@@ -77,13 +78,9 @@ fn is_ok_and_directory_name_first_letter_nonzero_number(
 
     let directory_name = d.file_name();
     let directory_name_parsed = directory_name.to_string_lossy();
-    let first = directory_name_parsed.chars().next().unwrap();
-
-    if !directory_name.is_empty() && ['1', '2', '3', '4', '5', '6', '7', '8', '9'].contains(&first)
-    {
-        Some(d)
-    } else {
-        None
+    match directory_name_parsed.chars().next() {
+        Some('1' | '2' | '3' | '4' | '5' | '6' | '7' | '8' | '9') => Some(d),
+        _ => None,
     }
 }
 
