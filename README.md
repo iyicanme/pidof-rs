@@ -39,7 +39,8 @@ Benchmark 1: target/release/pidof-rs code
 The original:
 
 ```
-LD_LIBRARY_PATH=library/.libs src/.libs/pidof code
+$ hyperfine -w 20 -r 100 'LD_LIBRARY_PATH=library/.libs src/.libs/pidof code'
+Benchmark 1: LD_LIBRARY_PATH=library/.libs src/.libs/pidof code  
   Time (mean ± σ):      34.6 ms ±   5.1 ms    [User: 4.8 ms, System: 29.4 ms]
   Range (min … max):    23.2 ms …  39.1 ms    100 runs
 ```
