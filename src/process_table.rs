@@ -46,43 +46,42 @@ impl SlashProc {
 }
 
 fn read_process(d: std::io::Result<DirEntry>) -> Option<ProcessInfo> {
-    let d = if let Ok(d) = d {
-        let directory_name = d.file_name();
-        let directory_name_parsed = directory_name.to_string_lossy();
-        let first = directory_name_parsed.chars().next().unwrap();
+    let d = is_ok_and_directory_name_first_letter_nonzero_number(d)?;
 
-        if !directory_name.is_empty()
-            && ['1', '2', '3', '4', '5', '6', '7', '8', '9'].contains(&first)
-        {
-            Some(d)
-        } else {
-            None
-        }
-    } else {
-        None
+    let file_name = d.file_name();
+    let file_name_string = file_name.to_str()?;
+
+    let tid = str::parse(file_name_string).ok()?;
+    let tgid = tid;
+
+    let path = d.path().to_str()?.to_owned();
+    let (ppid, cmd) = read_stat_file(&path)?;
+
+    let cmdline_vector = read_cmdline_file(&path)?;
+
+    let process_info = ProcessInfo {
+        tid,
+        ppid,
+        tgid,
+        cmd,
+        cmdline_vector,
     };
 
-    if let Some(d) = d {
-        let file_name = d.file_name();
-        let file_name_string = file_name.to_str()?;
+    Some(process_info)
+}
 
-        let tid = str::parse(file_name_string).ok()?;
-        let tgid = tid;
+fn is_ok_and_directory_name_first_letter_nonzero_number(
+    d: std::io::Result<DirEntry>,
+) -> Option<DirEntry> {
+    let d = d.ok()?;
 
-        let path = d.path().to_str()?.to_owned();
-        let (ppid, cmd) = read_stat_file(&path)?;
+    let directory_name = d.file_name();
+    let directory_name_parsed = directory_name.to_string_lossy();
+    let first = directory_name_parsed.chars().next().unwrap();
 
-        let cmdline_vector = read_cmdline_file(&path)?;
-
-        let process_info = ProcessInfo {
-            tid,
-            ppid,
-            tgid,
-            cmd,
-            cmdline_vector,
-        };
-
-        Some(process_info)
+    if !directory_name.is_empty() && ['1', '2', '3', '4', '5', '6', '7', '8', '9'].contains(&first)
+    {
+        Some(d)
     } else {
         None
     }
