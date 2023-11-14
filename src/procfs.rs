@@ -85,7 +85,7 @@ fn is_ok_and_directory_name_first_letter_nonzero_number(
     let directory_name = d.file_name();
     let directory_name_parsed = directory_name.to_string_lossy();
     match directory_name_parsed.chars().next() {
-        Some('1' | '2' | '3' | '4' | '5' | '6' | '7' | '8' | '9') => Some(d),
+        Some('1'..='9') => Some(d),
         _ => None,
     }
 }
