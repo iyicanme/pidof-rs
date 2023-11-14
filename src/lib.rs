@@ -1,34 +1,37 @@
+//! > **Rust rewrite of the `pidof` Linux command line utility**
+//! ## Usage
+//!
+//! You can use it as a replacement to the original:
+//!
+//! ```bash
+//! $ pidof-rs code
+//! 7575 7579 7580 7582 7616 7624 7670 7734 7735 7738
+//! ```
+//!
+//! Or call from your Rust code:
+//!
+//! ```rust
+//! # use pidof_rs::ProcessInfoTable;
+//!
+//!
+//! # fn main() -> Result<(), std::io::Error> {
+//! let process_info_table =
+//!     ProcessInfoTable::populate(None, false, false, false)?;
+//!         
+//! let process_name = "foo";
+//! let pids = process_info_table.pid_of(process_name);
+//!
+//! dbg!(pids);
+//! # Ok(())
+//! # }
+//! ```
+
 pub use crate::check_flags::{CheckRoot, CheckScripts, CheckThreads, CheckWorkers};
-use crate::process_table::SlashProc;
-/// > **Rust rewrite of the `pidof` Linux command line utility**
-/// ## Usage
-///
-/// You can use it as a replacement to the original:
-///
-/// ```bash
-/// $ pidof-rs code
-/// 7575 7579 7580 7582 7616 7624 7670 7734 7735 7738
-/// ```
-///
-/// Or call from your Rust code:
-///
-/// ```rust
-/// # use pidof_rs::{CheckRoot, CheckScripts, CheckWorkers, CheckThreads, ProcessInfoTable};
-/// # fn main() -> Result<(), std::io::Error> {
-/// let process_info_table =
-///     ProcessInfoTable::populate(CheckRoot::No, CheckScripts::No, CheckThreads::No, CheckWorkers::No)?;
-///         
-/// let process_name = "foo";
-/// let pids = process_info_table.pid_of(process_name);
-///
-/// dbg!(pids);
-/// # Ok(())
-/// # }
-/// ```
+use crate::procfs::Procfs;
 use crate::utils::{base_name, pid_link};
 
 mod check_flags;
-mod process_table;
+mod procfs;
 mod utils;
 
 /// Holds the information of processes running to be matched against the program name.
@@ -59,7 +62,7 @@ impl ProcessInfoTable {
         check_workers: CheckWorkers,
     ) -> std::io::Result<Self> {
         let table = Self {
-            info: SlashProc::new()?.read(check_threads),
+            info: Procfs::new()?.read(check_threads),
             check_root,
             check_scripts,
             check_workers,
@@ -110,7 +113,11 @@ impl ProcessInfo {
         const LOGIN_SHELL_PREFIX: char = '-';
 
         if let CheckRoot::Yes(pidof_root) = check_root {
-            if pid_link(self.tid, "root").ne(pidof_root) {
+            let Ok(link) = pid_link(self.tid, "root") else {
+                return false;
+            };
+
+            if link.ne(pidof_root) {
                 return false;
             }
         }
@@ -126,7 +133,10 @@ impl ProcessInfo {
         };
 
         let cmd_arg0_base = base_name(cmd_arg0);
-        let exe_link = pid_link(self.tid, "exe");
+        let Ok(exe_link) = pid_link(self.tid, "exe") else {
+            return false;
+        };
+
         let exe_link_base = base_name(&exe_link);
 
         let condition1 = program_name == cmd_arg0
@@ -137,15 +147,13 @@ impl ProcessInfo {
             || program_name == exe_link_base;
 
         let condition2 = if check_scripts == CheckScripts::Yes {
-            if let Some(cmd_arg1) = cmd_line.next() {
+            cmd_line.next().map_or(false, |cmd_arg1| {
                 let cmd_arg1_base = base_name(cmd_arg1);
                 self.cmd == cmd_arg1_base
                     || program_name == cmd_arg1_base
                     || program_base_name == cmd_arg1
                     || program_name == cmd_arg1
-            } else {
-                false
-            }
+            })
         } else {
             false
         };

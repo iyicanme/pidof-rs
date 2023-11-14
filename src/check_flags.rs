@@ -10,7 +10,7 @@ pub enum CheckRoot {
 impl From<bool> for CheckRoot {
     fn from(value: bool) -> Self {
         if is_root() && value {
-            Self::Yes(pid_link(std::process::id() as i32, "root"))
+            pid_link(std::process::id() as i32, "root").map_or(Self::No, |l| Self::Yes(l))
         } else {
             Self::No
         }

@@ -4,12 +4,14 @@ use std::io::{BufRead, BufReader};
 use crate::check_flags::CheckThreads;
 use crate::ProcessInfo;
 
-pub(crate) struct SlashProc {
+pub(crate) struct Procfs {
     hide_kernel: bool,
     process_filesystem: ReadDir,
 }
 
-impl SlashProc {
+const KTHREADD_PID: i32 = 2;
+
+impl Procfs {
     pub(crate) fn new() -> std::io::Result<Self> {
         let table = Self {
             hide_kernel: std::env::var_os("LIBPROC_HIDE_KERNEL").is_some(),
@@ -29,46 +31,50 @@ impl SlashProc {
     fn read_processes(self) -> Vec<ProcessInfo> {
         self.process_filesystem
             .filter_map(read_process)
-            .filter(|p: &ProcessInfo| !self.hide_kernel || !(p.ppid == 2 || p.tid == 2))
+            .filter(|p| hide_kernel_thread(self.hide_kernel, p))
             .collect()
     }
 
     fn read_processes_and_tasks(self) -> Vec<ProcessInfo> {
         if std::fs::read_dir("/proc/self/task").is_err() {
-            return vec![];
+            return Vec::new();
         }
 
         self.process_filesystem
             .filter_map(read_process)
             .flat_map(read_tasks)
-            .filter(|p: &ProcessInfo| !self.hide_kernel || !(p.ppid == 2 || p.tid == 2))
+            .filter(|p| hide_kernel_thread(self.hide_kernel, p))
             .collect()
     }
 }
 
+const fn hide_kernel_thread(hide_kernel: bool, process_info: &ProcessInfo) -> bool {
+    !hide_kernel || !(process_info.ppid == KTHREADD_PID || process_info.tid == KTHREADD_PID)
+}
+
+#[allow(clippy::similar_names)]
 fn read_process(d: std::io::Result<DirEntry>) -> Option<ProcessInfo> {
     let d = is_ok_and_directory_name_first_letter_nonzero_number(d)?;
 
-    let file_name = d.file_name();
-    let file_name_string = file_name.to_str()?;
-
-    let tid = str::parse(file_name_string).ok()?;
+    let tid = str::parse(d.file_name().to_str()?).ok()?;
     let tgid = tid;
 
     let path = d.path().to_str()?.to_owned();
     let (ppid, cmd) = read_stat_file(&path)?;
 
-    let cmdline_vector = read_cmdline_file(&path)?;
+    let cmdline_vector = read_cmdline_file(&path);
 
-    let process_info = ProcessInfo {
-        tid,
-        ppid,
-        tgid,
-        cmd,
-        cmdline_vector,
-    };
-
-    Some(process_info)
+    if cmdline_vector.is_empty() {
+        None
+    } else {
+        Some(ProcessInfo {
+            tid,
+            ppid,
+            tgid,
+            cmd,
+            cmdline_vector,
+        })
+    }
 }
 
 fn is_ok_and_directory_name_first_letter_nonzero_number(
@@ -85,11 +91,8 @@ fn is_ok_and_directory_name_first_letter_nonzero_number(
 }
 
 fn read_tasks(p: ProcessInfo) -> Vec<ProcessInfo> {
-    let mut tasks = if let Ok(r) = std::fs::read_dir(format!("/proc/{}/task", p.tgid)) {
-        r.filter_map(read_process).collect()
-    } else {
-        vec![]
-    };
+    let mut tasks = std::fs::read_dir(format!("/proc/{}/task", p.tgid))
+        .map_or_else(|_| vec![], |r| r.filter_map(read_process).collect());
 
     tasks.push(p);
 
@@ -119,20 +122,12 @@ fn read_stat_file(path: &str) -> Option<(i32, String)> {
     Some((ppid, process_name))
 }
 
-fn read_cmdline_file(path: &str) -> Option<Vec<String>> {
-    let file = File::open(format!("{path}/cmdline")).ok()?;
-    let mut buffered = BufReader::new(file);
+fn read_cmdline_file(path: &str) -> Vec<String> {
+    let Ok(file) = File::open(format!("{path}/cmdline")) else {
+        return Vec::new();
+    };
 
-    let mut lines = vec![];
+    let buffered = BufReader::new(file);
 
-    let mut content = String::new();
-    while let Ok(amount_read) = buffered.read_line(&mut content) {
-        if amount_read == 0 {
-            break;
-        }
-
-        lines.push(content.clone());
-    }
-
-    Some(lines)
+    buffered.lines().map_while(Result::ok).collect()
 }

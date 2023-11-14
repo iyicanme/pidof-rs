@@ -3,8 +3,9 @@
 use std::process::exit;
 
 use clap::Parser;
+use nix::libc::{EXIT_FAILURE, EXIT_SUCCESS};
 
-use pidof_rs::{CheckRoot, CheckScripts, CheckThreads, CheckWorkers, ProcessInfoTable};
+pub use pidof_rs::{CheckRoot, CheckScripts, CheckThreads, CheckWorkers, ProcessInfoTable};
 
 #[derive(Debug, clap::Parser)]
 struct Args {
@@ -30,10 +31,10 @@ struct Args {
     check_threads: bool,
 
     #[arg(
-    short = 'S',
-    long,
-    default_value = " ",
-    help = "use SEP as separator put between PIDs"
+        short = 'S',
+        long,
+        default_value = " ",
+        help = "use SEP as separator put between PIDs"
     )]
     separator: String,
 
@@ -48,7 +49,7 @@ fn main() {
 
     if args.version {
         println!("{}", env!("CARGO_PKG_VERSION"));
-        exit(libc::EXIT_SUCCESS);
+        exit(EXIT_SUCCESS);
     }
 
     let check_root = CheckRoot::from(args.check_root);
@@ -80,9 +81,9 @@ fn main() {
     }
 
     let exit_code = if pids.is_empty() {
-        libc::EXIT_FAILURE
+        EXIT_FAILURE
     } else {
-        libc::EXIT_SUCCESS
+        EXIT_SUCCESS
     };
 
     exit(exit_code);
