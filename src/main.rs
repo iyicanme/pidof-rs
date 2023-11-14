@@ -75,7 +75,7 @@ fn main() {
     };
 
     if !args.quiet {
-        let pid_strings: Vec<String> = chosen_pids.iter().map(|p| format!("{p}")).collect();
+        let pid_strings: Vec<String> = chosen_pids.iter().map(|p| p.to_string()).collect();
         let output = pid_strings.join(&args.separator);
         println!("{output}");
     }

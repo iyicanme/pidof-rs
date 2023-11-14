@@ -1,5 +1,6 @@
 use std::fs::{DirEntry, File, ReadDir};
 use std::io::{BufRead, BufReader};
+use std::path::Path;
 
 use crate::check_flags::CheckThreads;
 use crate::ProcessInfo;
@@ -15,7 +16,7 @@ impl Procfs {
     pub(crate) fn new() -> std::io::Result<Self> {
         let table = Self {
             hide_kernel: std::env::var_os("LIBPROC_HIDE_KERNEL").is_some(),
-            process_filesystem: std::fs::read_dir("/proc")?,
+            process_filesystem: std::fs::read_dir(Path::new("/proc"))?,
         };
 
         Ok(table)
@@ -36,7 +37,7 @@ impl Procfs {
     }
 
     fn read_processes_and_tasks(self) -> Vec<ProcessInfo> {
-        if std::fs::read_dir("/proc/self/task").is_err() {
+        if std::fs::read_dir(Path::new("/proc/self/task")).is_err() {
             return Vec::new();
         }
 
@@ -59,7 +60,7 @@ fn read_process(d: std::io::Result<DirEntry>) -> Option<ProcessInfo> {
     let tid = str::parse(d.file_name().to_str()?).ok()?;
     let tgid = tid;
 
-    let path = d.path().to_str()?.to_owned();
+    let path = d.path();
     let (ppid, cmd) = read_stat_file(&path)?;
 
     let cmdline_vector = read_cmdline_file(&path);
@@ -91,20 +92,21 @@ fn is_ok_and_directory_name_first_letter_nonzero_number(
 }
 
 fn read_tasks(p: ProcessInfo) -> Vec<ProcessInfo> {
-    let mut tasks = std::fs::read_dir(format!("/proc/{}/task", p.tgid))
-        .map_or_else(|_| vec![], |r| r.filter_map(read_process).collect());
+    let path = Path::new("/proc").join(p.tgid.to_string()).join("task");
+    let mut tasks =
+        std::fs::read_dir(path).map_or_else(|_| vec![], |r| r.filter_map(read_process).collect());
 
     tasks.push(p);
 
     tasks
 }
 
-fn read_stat_file(path: &str) -> Option<(i32, String)> {
+fn read_stat_file(path: &Path) -> Option<(i32, String)> {
     const FIELD_SEPERATOR: &str = " ";
     const PROCESS_NAME_PREFIX: &str = "(";
     const PROCESS_NAME_SUFFIX: &str = ")";
 
-    let file = File::open(format!("{path}/stat")).ok()?;
+    let file = File::open(path.join("stat")).ok()?;
     let mut buffered = BufReader::new(file);
 
     let mut content = String::new();
@@ -122,8 +124,8 @@ fn read_stat_file(path: &str) -> Option<(i32, String)> {
     Some((ppid, process_name))
 }
 
-fn read_cmdline_file(path: &str) -> Vec<String> {
-    let Ok(file) = File::open(format!("{path}/cmdline")) else {
+fn read_cmdline_file(path: &Path) -> Vec<String> {
+    let Ok(file) = File::open(path.join("cmdline")) else {
         return Vec::new();
     };
 
