@@ -11,12 +11,16 @@
 //! Or call from your Rust code:
 //!
 //! ```rust
-//! # use pidof_rs::ProcessInfoTable;
-//!
+//! # use pidof_rs::{CheckRoot,CheckScripts, CheckThreads,CheckWorkers,ProcessInfoTable};
 //!
 //! # fn main() -> Result<(), std::io::Error> {
+//! # let check_root = CheckRoot::No;
+//! # let check_scripts = CheckScripts::No;
+//! # let check_threads = CheckThreads::No;
+//! # let check_workers = CheckWorkers::No;
+//!
 //! let process_info_table =
-//!     ProcessInfoTable::populate(None, false, false, false)?;
+//!     ProcessInfoTable::populate(check_root, check_scripts, check_threads, check_workers)?;
 //!         
 //! let process_name = "foo";
 //! let pids = process_info_table.pid_of(process_name);
