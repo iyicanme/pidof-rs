@@ -5,7 +5,7 @@ use std::process::exit;
 use clap::Parser;
 use nix::libc::{EXIT_FAILURE, EXIT_SUCCESS};
 
-pub use pidof_rs::{CheckRoot, CheckScripts, CheckThreads, CheckWorkers, ProcessInfoTable};
+pub use pidof_rs::{CheckRoot, CheckScripts, CheckThreads, CheckWorkers, ProcessTable};
 
 #[derive(Debug, clap::Parser)]
 struct Args {
@@ -58,13 +58,14 @@ fn main() {
     let check_workers = CheckWorkers::from(args.check_workers);
 
     let process_info_table =
-        ProcessInfoTable::populate(check_root, check_scripts, check_threads, check_workers)
-            .expect("process table populated");
+        ProcessTable::populate(check_threads).expect("process table populated");
 
     let pids: Vec<i32> = args
         .program_names
         .iter()
-        .flat_map(|program| process_info_table.pid_of(program))
+        .flat_map(|program| {
+            process_info_table.pid_of(program, &check_root, check_workers, check_scripts)
+        })
         .filter(|pid| !args.omitted_pids.contains(pid))
         .collect();
 

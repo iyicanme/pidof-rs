@@ -11,16 +11,14 @@
 //! Or call from your Rust code:
 //!
 //! ```rust
-//! # use pidof_rs::{CheckRoot,CheckScripts, CheckThreads,CheckWorkers,ProcessInfoTable};
-//!
+//! # use pidof_rs::{CheckRoot,CheckScripts, CheckThreads,CheckWorkers,ProcessTable};
 //! # fn main() -> Result<(), std::io::Error> {
 //! # let check_root = CheckRoot::No;
 //! # let check_scripts = CheckScripts::No;
 //! # let check_threads = CheckThreads::No;
 //! # let check_workers = CheckWorkers::No;
-//!
 //! let process_info_table =
-//!     ProcessInfoTable::populate(check_root, check_scripts, check_threads, check_workers)?;
+//!     ProcessTable::populate(check_root, check_scripts, check_threads, check_workers)?;
 //!         
 //! let process_name = "foo";
 //! let pids = process_info_table.pid_of(process_name);
@@ -31,139 +29,69 @@
 //! ```
 
 pub use crate::check_flags::{CheckRoot, CheckScripts, CheckThreads, CheckWorkers};
-use crate::procfs::Procfs;
-use crate::utils::{base_name, pid_link};
+use crate::process::{read_processes, Process};
+use std::fs::read_link;
+use std::path::Path;
 
 mod check_flags;
-mod procfs;
-mod utils;
+mod process;
 
 /// Holds the information of processes running to be matched against the program name.
-pub struct ProcessInfoTable {
-    info: Vec<ProcessInfo>,
-
-    check_root: CheckRoot,
-    check_scripts: CheckScripts,
-    check_workers: CheckWorkers,
+pub struct ProcessTable {
+    info: Vec<Process>,
 }
 
-impl ProcessInfoTable {
+impl ProcessTable {
     /// Scans the system to gather information of processes.
     /// Table does not refresh, so information can get stale as processes get spawned and die.
     ///
     /// # Arguments
-    /// * `check_root` - Discards processes with different root
-    /// * `check_scripts` - Also matches names of running scripts
     /// * `check_threads` - Also matches thread names
-    /// * `check_workers` - Also matches kernel workers
     ///
     /// # Errors
     /// Returns error if populating the process table fails
-    pub fn populate(
-        check_root: CheckRoot,
-        check_scripts: CheckScripts,
-        check_threads: CheckThreads,
-        check_workers: CheckWorkers,
-    ) -> std::io::Result<Self> {
-        let table = Self {
-            info: Procfs::new()?.read(check_threads),
-            check_root,
-            check_scripts,
-            check_workers,
-        };
-
-        Ok(table)
+    pub fn populate(check_threads: CheckThreads) -> std::io::Result<Self> {
+        Ok(Self {
+            info: read_processes(check_threads),
+        })
     }
 
     /// Scans the table for entries matching the program name and returns list of process IDs
     ///
     /// # Arguments
     /// * `program_name` - Program name to match
+    /// * `check_root` - Discards processes with different root
+    /// * `check_scripts` - Also matches names of running scripts
+    /// * `check_workers` - Also matches kernel workers
     #[must_use]
-    pub fn pid_of(&self, program_name: &str) -> Vec<i32> {
-        self.info
-            .iter()
-            .filter(|p| {
-                p.matches(
-                    program_name,
-                    &self.check_root,
-                    self.check_workers,
-                    self.check_scripts,
-                )
-            })
-            .map(|p| p.tid)
-            .collect()
-    }
-}
-
-#[derive(Debug)]
-struct ProcessInfo {
-    tid: i32,
-    ppid: i32,
-    tgid: i32,
-    cmd: String,
-    cmdline_vector: Vec<String>,
-}
-
-impl ProcessInfo {
-    #[must_use]
-    fn matches(
+    pub fn pid_of(
         &self,
         program_name: &str,
         check_root: &CheckRoot,
         check_workers: CheckWorkers,
         check_scripts: CheckScripts,
-    ) -> bool {
-        const LOGIN_SHELL_PREFIX: char = '-';
-
-        if let CheckRoot::Yes(pidof_root) = check_root {
-            let Ok(link) = pid_link(self.tid, "root") else {
-                return false;
-            };
-
-            if link.ne(pidof_root) {
-                return false;
-            }
-        }
-
-        let program_base_name = base_name(program_name);
-        let mut cmd_line = self
-            .cmdline_vector
+    ) -> Vec<i32> {
+        self.info
             .iter()
-            .filter(|c| !c.starts_with(LOGIN_SHELL_PREFIX));
-
-        let Some(cmd_arg0) = cmd_line.next() else {
-            return false;
-        };
-
-        let cmd_arg0_base = base_name(cmd_arg0);
-        let Ok(exe_link) = pid_link(self.tid, "exe") else {
-            return false;
-        };
-
-        let exe_link_base = base_name(&exe_link);
-
-        let condition1 = program_name == cmd_arg0
-            || program_name == cmd_arg0_base
-            || (check_workers == CheckWorkers::Yes && program_name == self.cmd)
-            || program_base_name == cmd_arg0
-            || program_name == exe_link
-            || program_name == exe_link_base;
-
-        let condition2 = if check_scripts == CheckScripts::Yes {
-            cmd_line.next().map_or(false, |cmd_arg1| {
-                let cmd_arg1_base = base_name(cmd_arg1);
-                self.cmd == cmd_arg1_base
-                    || program_name == cmd_arg1_base
-                    || program_base_name == cmd_arg1
-                    || program_name == cmd_arg1
-            })
-        } else {
-            false
-        };
-
-        let condition3 = cmd_arg0.contains('_') && program_name == self.cmd;
-
-        condition1 || condition2 || condition3
+            .filter(|p| p.matches(program_name, check_root, check_workers, check_scripts))
+            .map(|p| p.tid)
+            .collect()
     }
+}
+
+fn base_name(name: &str) -> &str {
+    match name.rsplit_once('/') {
+        Some((_, base_name)) => base_name,
+        None => name,
+    }
+}
+
+fn is_root() -> bool {
+    nix::unistd::geteuid().as_raw() == 0
+}
+
+fn pid_link(pid: i32, base_name: &str) -> std::io::Result<String> {
+    let link = Path::new("/proc").join(pid.to_string()).join(base_name);
+
+    Ok(read_link(link)?.to_string_lossy().to_string())
 }

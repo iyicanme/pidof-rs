@@ -1,4 +1,4 @@
-use crate::utils::{is_root, pid_link};
+use crate::{is_root, pid_link};
 
 /// Modifies the process info table populate behaviour to discard processes with different root
 #[derive(Clone)]
