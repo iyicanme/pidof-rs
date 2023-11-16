@@ -52,7 +52,7 @@ fn main() {
         exit(EXIT_SUCCESS);
     }
 
-    let check_root = CheckRoot::from(args.check_root);
+    let check_root = CheckRoot::new(args.check_root);
     let check_scripts = CheckScripts::from(args.check_scripts);
     let check_threads = CheckThreads::from(args.check_threads);
     let check_workers = CheckWorkers::from(args.check_workers);

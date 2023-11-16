@@ -17,21 +17,21 @@
 //! # let check_scripts = CheckScripts::No;
 //! # let check_threads = CheckThreads::No;
 //! # let check_workers = CheckWorkers::No;
-//! let process_info_table =
-//!     ProcessTable::populate(check_root, check_scripts, check_threads, check_workers)?;
+//! let process_info_table = ProcessTable::populate(check_threads)?;
 //!         
 //! let process_name = "foo";
-//! let pids = process_info_table.pid_of(process_name);
+//! let pids = process_info_table.pid_of(process_name, &check_root, check_workers, check_scripts);
 //!
 //! dbg!(pids);
 //! # Ok(())
 //! # }
 //! ```
 
-pub use crate::check_flags::{CheckRoot, CheckScripts, CheckThreads, CheckWorkers};
-use crate::process::{read_processes, Process};
 use std::fs::read_link;
 use std::path::Path;
+
+pub use crate::check_flags::{CheckRoot, CheckScripts, CheckThreads, CheckWorkers};
+use crate::process::{read_processes, Process};
 
 mod check_flags;
 mod process;
