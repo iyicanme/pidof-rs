@@ -10,8 +10,6 @@ pub(crate) struct Procfs {
     process_filesystem: ReadDir,
 }
 
-const KTHREADD_PID: i32 = 2;
-
 impl Procfs {
     pub(crate) fn new() -> std::io::Result<Self> {
         let table = Self {
@@ -50,6 +48,8 @@ impl Procfs {
 }
 
 const fn hide_kernel_thread(hide_kernel: bool, process_info: &ProcessInfo) -> bool {
+    const KTHREADD_PID: i32 = 2;
+
     !hide_kernel || !(process_info.ppid == KTHREADD_PID || process_info.tid == KTHREADD_PID)
 }
 
@@ -101,17 +101,21 @@ fn read_tasks(p: ProcessInfo) -> Vec<ProcessInfo> {
     tasks
 }
 
-fn read_stat_file(path: &Path) -> Option<(i32, String)> {
-    const FIELD_SEPERATOR: &str = " ";
-    const PROCESS_NAME_PREFIX: &str = "(";
-    const PROCESS_NAME_SUFFIX: &str = ")";
+const FIELD_SEPERATOR: &str = " ";
+const PROCESS_NAME_PREFIX: &str = "(";
+const PROCESS_NAME_SUFFIX: &str = ")";
 
+fn read_stat_file(path: &Path) -> Option<(i32, String)> {
     let file = File::open(path.join("stat")).ok()?;
     let mut buffered = BufReader::new(file);
 
     let mut content = String::new();
     buffered.read_line(&mut content).ok()?;
 
+    parse_stat_file(&content)
+}
+
+fn parse_stat_file(content: &str) -> Option<(i32, String)> {
     let mut fields = content.split(FIELD_SEPERATOR);
 
     let process_name = fields
@@ -129,7 +133,49 @@ fn read_cmdline_file(path: &Path) -> Vec<String> {
         return Vec::new();
     };
 
-    let buffered = BufReader::new(file);
+    BufReader::new(file).lines().map_while(Result::ok).collect()
+}
 
-    buffered.lines().map_while(Result::ok).collect()
+#[cfg(test)]
+mod tests {
+    use crate::procfs::parse_stat_file;
+
+    #[test]
+    fn parsing_empty_stat_file_fails() {
+        let content = "";
+
+        assert_eq!(parse_stat_file(content), None);
+    }
+
+    #[test]
+    fn parsing_stat_file_with_malformed_process_name_field_fails() {
+        let cases = [
+            ("0 (foo", "missing suffix"),
+            ("0 foo)", "missing prefix"),
+            ("0 /foo)", "wrong prefix"),
+            ("0 (foo/", "wrong suffix"),
+        ];
+
+        for (content, message) in cases {
+            assert_eq!(
+                parse_stat_file(content),
+                None,
+                "parsing succeeded when expected to fail due to {message}, content: {content}"
+            );
+        }
+    }
+
+    #[test]
+    fn parsing_stat_file_with_non_number_ppid_fails() {
+        let content = "0 (foo) 0 bar";
+
+        assert_eq!(parse_stat_file(content), None);
+    }
+
+    #[test]
+    fn parsing_correct_stat_file_succeeds() {
+        let content = "0 (foo) 0 0";
+
+        assert_eq!(parse_stat_file(content), Some((0, "foo".to_owned())));
+    }
 }
